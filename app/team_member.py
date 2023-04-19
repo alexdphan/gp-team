@@ -1,23 +1,114 @@
-# models.py
-"""Module containing GPTeamMember and CEO classes."""
+from collections import deque
+from typing import Dict, List, Optional, Any
+from pydantic import BaseModel, Field
+from langchain import LLMChain, PromptTemplate
+from langchain.agents import Tool
+from langchain.chains.base import Chain
+from langchain.llms import BaseLLM
+from langchain.vectorstores.base import VectorStore
+from langchain.vectorstores import Chroma
+from chromadb import errors as chromadb_errors
 
-from pydantic import BaseModel
+# Define the Chains for TeamMembers
 
-class TaskData(BaseModel):
-    user_id: int
-    task: str
-    objective: str
+class TaskPrioritizationChain(LLMChain):
+    """Chain to prioritize tasks for a TeamMember."""
+
+    @classmethod
+    def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
+        """Get the response parser."""
+        task_prioritization_template = (
+            "You are an AI tasked with prioritizing tasks for a TeamMember based on their expertise and the team's objective."
+            " User ID: {user_id}. Expertise Role: {expertise_role}."
+            " Task List: {task_list}."
+            " Consider the information from the Chroma Instance: {chroma_instance}."
+        )
+        prompt = PromptTemplate(
+            template=task_prioritization_template,
+            input_variables=["user_id", "chroma_instance", "expertise_role", "task_list"],
+        )
+        return cls(prompt=prompt, llm=llm, verbose=verbose)
+
+class ExecutionChain(LLMChain):
+    """Chain to execute tasks for a TeamMember."""
+
+    @classmethod
+    def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
+        """Get the response parser."""
+        task_execution_template = (
+            "You are an AI tasked with executing tasks for a TeamMember based on their expertise and the team's objective."
+            " User ID: {user_id}. Expertise Role: {expertise_role}."
+            " Task List: {task_list}."
+            " Consider the information from the Chroma Instance: {chroma_instance}."
+        )
+        prompt = PromptTemplate(
+            template=task_execution_template,
+            input_variables=["user_id", "chroma_instance", "expertise_role", "task_list"],
+        )
+        return cls(prompt=prompt, llm=llm, verbose=verbose)
+
+# Define the TeamMember class
 
 class TeamMember:
-    """Class representing team members with GPT roles."""
+    def __init__(
+        self,
+        user_id: str,
+        expertise_role: str,
+        task_list: List[str],
+        task_prioritization_chain: LLMChain,
+        execution_chain: LLMChain,
+        objective: str,
+        overall_feedback: str,
+    ):
+        self.user_id = user_id
+        self.expertise_role = expertise_role
+        self.task_list = task_list
+        self.task_prioritization_chain = task_prioritization_chain
+        self.execution_chain = execution_chain
+        self.objective = objective
+        self.overall_feedback = overall_feedback
 
-    def __init__(self, role):
-        self.role = role
-        self.feedback = None  # Add a feedback attribute
+    def prioritize_tasks(self, chroma_instance: Chroma):
+        """Prioritize tasks using the TaskPrioritizationChain."""
+        return self.task_prioritization_chain.run(
+            user_id=self.user_id,
+            chroma_instance=chroma_instance,
+            expertise_role=self.expertise_role,
+            task_list=self.task_list,
+            objective=self.objective,
+            overall_feedback=self.overall_feedback,
+        )
 
-    def process_task(self, task, prompt_templates, chroma_vector_store):
-        """Process a given task."""
-        # Implement your task processing logic here
-        # e.g., use Langchain and Chroma to process task and return the result
+    def execute_tasks(self, chroma_instance: Chroma):
+        """Execute tasks using the ExecutionChain."""
+        return self.execution_chain.run(
+            user_id=self.user_id,
+            chroma_instance=chroma_instance,
+            expertise_role=self.expertise_role,
+            task_list=self.task_list,
+            objective=self.objective,
+            overall_feedback=self.overall_feedback,
+        )
 
-        return "Processed task result"  # Placeholder result
+# Additional functionality for the TeamMember class can be added here as needed.
+# Example of creating TeamMember objects with the chains
+def create_team_member(
+    user_id: str,
+    expertise_role: str,
+    task_list: List[str],
+    task_prioritization_chain: TaskPrioritizationChain,
+    execution_chain: ExecutionChain,
+    objective: str,
+    overall_feedback: Optional[str] = None,
+) -> TeamMember:
+    print(f"Creating team member with the role: {expertise_role}")
+    return TeamMember(
+        user_id=user_id,
+        expertise_role=expertise_role,
+        task_list=task_list,
+        task_prioritization_chain=task_prioritization_chain,
+        execution_chain=execution_chain,
+        objective=objective,
+        overall_feedback=overall_feedback,
+    )
+

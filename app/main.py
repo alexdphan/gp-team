@@ -1,76 +1,108 @@
-from typing import Optional
-import uuid
-from fastapi import FastAPI, Depends
-from pydantic import BaseModel
-from app.ceo import CEO
-from app.utils import search_tool, OPENAI_API_KEY, SERP_API_KEY, Tool
-from app.team_member import TaskData, TeamMember
-from langchain import LLMChain, OpenAI
-from langchain.vectorstores import Chroma
-from langchain.embeddings.openai import OpenAIEmbeddings
-from app.config import config # import loaded config from config.py
+import os
+from dotenv import load_dotenv
+from langchain.llms.openai import OpenAI
+from langchain.vectorstores.chroma import Chroma
+from langchain.embeddings import OpenAIEmbeddings
+import os
+from app.ceo import (
+    CEO,
+    RoleCreationChain,
+    TaskCreationAssignChain,
+    ReportCreationChain,
+    ReviseCreationChain,
+)
+from colorama import Fore, Style
 
-app = FastAPI()
+def main():
 
-class TaskData(BaseModel):
-    objective: str
+    # Set Variables
+    load_dotenv()
 
-# Initialize team members
-team_members = [
-    TeamMember(role="Data Scientist"),
-    TeamMember(role="Software Engineer"),
-    TeamMember(role="Product Manager"),
-]
+    # Read API keys from environment variables
+    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
-openai_embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-# using the fast_llm_model for now from config.py
-openai_llm = OpenAI(openai_api_key=OPENAI_API_KEY, model_kwargs={"model": config.fast_llm_model})
-# setting the main chroma instance to the one from config.py, which is a chroma instance
-main_chroma_instance = Chroma(config.chroma_name, openai_embeddings)
+    # Define your embedding model
+    embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
-ceo = CEO(objective="Search top restaurants in nyc", default_chroma=main_chroma_instance, default_llm=openai_llm, api_key=OPENAI_API_KEY)
+    YOUR_TABLE_NAME = os.getenv("TABLE_NAME", "")
+    assert YOUR_TABLE_NAME, "TABLE_NAME environment variable is missing from .env"
+    table_name = YOUR_TABLE_NAME
 
-@app.get("/")
-def read_root(input_prompt: Optional[str] = None):
-    """Read root route."""
-    if input_prompt:
-        return {"Input Prompt": input_prompt}
-    else:
-        return {"Error": "No input prompt provided"}
+    persist_directory = "db"
 
-@app.post("/submit_objective")
-async def submit_objective(task_data: TaskData, user_id: Optional[str] = None):
-    """Submit objective route."""
-    objective_id = uuid.uuid4()
-    objective = task_data.objective
-    
-    # Add some texts to the Chroma instance to create an index
-    main_chroma_instance.add_texts(["dummy text"])
+    # Initialize the LLM, Chroma, and chain instances
+    llm = OpenAI(api_key=OPENAI_API_KEY)
+    chroma_instance = (
+        Chroma(table_name, embeddings_model,
+               persist_directory=persist_directory)
+    )  # Pass the API key when initializing the Chroma instance
+    role_creation_chain = RoleCreationChain.from_llm(llm)
+    task_creation_assign_chain = TaskCreationAssignChain.from_llm(llm)
+    report_creation_chain = ReportCreationChain.from_llm(llm)
+    revise_creation_chain = ReviseCreationChain.from_llm(llm)
 
-    # Delete the dummy collection
-    main_chroma_instance.delete_collection()
+    # Initialize the CEO instance
+    ceo = CEO(
+            chroma_instance=chroma_instance,
+            role_creation_chain=role_creation_chain,
+            task_creation_assign_chain=task_creation_assign_chain,
+            report_creation_chain=report_creation_chain,
+            revise_creation_chain=revise_creation_chain,
+        )
+    # Set the objective
+    objective = "Develop a new AI product"
 
-    # Now you can call the generate_expertise_keywords method
-    ceo = CEO(objective="Search top restaurants in nyc", default_chroma=main_chroma_instance, default_llm=openai_llm, api_key=OPENAI_API_KEY)
+    # Set the number of loops or use a stopping condition
+    number_of_loops = 5
+
+    print(Fore.GREEN + "1. RoleCreationChain:" + Style.RESET_ALL)
+    ceo.create_team_members(objective=objective, num_team_members=3)
+
+    for i in range(number_of_loops):
         
-    # Call the relevant methods to create and assign tasks, create a report, and revise and give feedback
-    assigned_task_lists = ceo.create_and_assign_tasks()
-    report = ceo.create_report()
-    revisions_and_feedback = ceo.revise_and_give_feedback()
+        user_id = ceo.get_new_user_id()
 
-    # Save the objective with the generated UUID
-    # You can replace this with your own logic to store the objective
-    objectives = {}
-    objectives[objective_id] = objective
+        print(Fore.GREEN + "2. TaskCreationAssignChain:" + Style.RESET_ALL)
+        ceo.assign_tasks_to_team_members(objective=objective)
+        print(Fore.GREEN + "2. Assigned tasks to team members:" + Style.RESET_ALL)
 
-    return {
-            "Objective ID": str(objective_id),
-            "Objective": objective,
-            "Assigned Task Lists": assigned_task_lists,
-            "Report": report,
-            "Revisions and Feedback": revisions_and_feedback,
-        }
-    
+        print(Fore.GREEN + "4. ReportCreationChain:" + Style.RESET_ALL)
+        report = ceo.report_creation_chain.run(
+            user_id=user_id,
+            objective=objective,
+            chroma_instance=ceo.chroma_instance,
+            team_members_expertise=ceo.get_team_members_expertise(),
+        )
+        
+        print(Fore.GREEN + "3. Getting outputs from team members:" + Style.RESET_ALL)
+        for team_member_id, team_member_instance in ceo.team_members.items():
+            ceo.receive_output(team_member_id, team_member_instance.execute_tasks(chroma_instance=ceo.chroma_instance))
+        
+        print(Fore.GREEN + "3. Received outputs from team members:" + Style.RESET_ALL)
+
+
+        print(Fore.GREEN + "5. ReviseCreationChain:" + Style.RESET_ALL)
+        revised_team_outputs = ceo.revise_creation_chain({
+                'user_id': user_id,
+                'objective': objective,
+                'chroma_instance': ceo.chroma_instance,
+                'team_members_expertise': ceo.get_team_members_expertise(),
+                'user_feedback': feedback if i > 0 else None  # Pass user_feedback to ReviseCreationChain
+            })
+
+        print(f"Report (Cycle {i+1}):")
+        print(report.strip().replace("\\n", "\n"))
+        print(f"\nRevised Team Outputs (Cycle {i+1}):") 
+        revised_outputs = revised_team_outputs.get('revised_outputs', '')
+        print(revised_outputs.strip().replace("\\n", "\n"))
+
+        # Get input from the user (Board of Directors)
+        user_input = input("Enter 'approve' to approve the report cycle or provide your feedback to continue: ")
+
+        feedback = None
+        if user_input.lower() != "approve":
+            feedback = user_input
+
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    main()
+

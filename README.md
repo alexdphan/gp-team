@@ -25,3 +25,7 @@ make a chat between:
 - [ ] u and other roles
 
 no instance for now. make the damn thing funcional first
+no tools for now
+
+implement selenium (use code to browse web (refer autogpt))
+use dolly v2
