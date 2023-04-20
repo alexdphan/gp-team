@@ -1,5 +1,4 @@
 from collections import deque
-import re
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 from langchain import LLMChain, PromptTemplate
@@ -9,8 +8,10 @@ from langchain.llms import BaseLLM
 from langchain.vectorstores.base import VectorStore
 from langchain.vectorstores import Chroma
 from chromadb import errors as chromadb_errors
+from langchain.memory import ConversationBufferWindowMemory
+from langchain.memory import ConversationBufferWindowMemory
 
-from app.team_member import (
+from team_member import (
     TeamMember,
     create_team_member,
     TaskPrioritizationChain,
@@ -34,6 +35,7 @@ class RoleCreationChain(LLMChain):
             input_variables=["user_id", "chroma_instance", "objective"],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
+        
 
 class TaskCreationAssignChain(LLMChain):
     """Chain to generate and assign tasks."""
@@ -58,9 +60,9 @@ class TaskCreationAssignChain(LLMChain):
             ],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
-    
+        
     # used to help the chain generate tasks for each team member based on their expertise, the objective, and the Chroma instance
-    def generate_new_task_list(self, vectorstore: Chroma, result: Dict, task_description: str,      task_list: List[str], objective: str, top_k: int) -> List[Dict]:
+    def generate_new_task_list(self, vectorstore: Chroma, result: Dict, task_description: str, task_list: List[str], objective: str, top_k: int) -> List[Dict]:
         """Get the next task."""
         top_tasks = self.get_top_tasks(vectorstore, task_description, top_k)
         task_list.extend(top_tasks)
@@ -79,7 +81,7 @@ class TaskCreationAssignChain(LLMChain):
     
     # used to help the chain generate tasks for each team member based on their expertise, the objective, and the Chroma instance
     # used within the generate_new_task_list function
-    def get_top_tasks(vectorstore: Chroma, query: str, k: int) -> List[str]:
+    def get_top_tasks(self, vectorstore: Chroma, query: str, k: int) -> List[str]:
         """Get the top k tasks based on the query. This is used when the CEO is creating a new task list, getting the top k tasks from the Chroma instance as a starting point. Important because the CEO is not an expert in the field, so the CEO needs to rely on the Chroma instance to get the top k tasks."""
         try:
             results = vectorstore.similarity_search_with_score(query=query, k=k)
@@ -148,7 +150,6 @@ class CEO:
         report_creation_chain: ReportCreationChain,
         revise_creation_chain: ReviseCreationChain,
     ):
-        self.user_id = 0
         self.chroma_instance = chroma_instance
         self.role_creation_chain = role_creation_chain
         self.task_creation_assign_chain = task_creation_assign_chain
@@ -156,6 +157,8 @@ class CEO:
         self.revise_creation_chain = revise_creation_chain
         self.team_members: Dict[str, TeamMember] = {}
         self.team_member_outputs = {}
+        self.user_id = 0
+        self.user_feedback = ""  # Initialize the user_feedback variable
 
         # Initialize the chains for the team members
         self.task_prioritization_chain = TaskPrioritizationChain.from_llm(role_creation_chain.llm)
@@ -207,8 +210,9 @@ class CEO:
             self.team_members[user_id].task_list = task_list
 
 
-    def execute_chains(self, objective: str):
-        self.create_team_members(objective=objective, num_team_members=int)
+    def execute_chains(self, objective: str, num_team_members: int, user_feedback: str):
+        # Rest of the function implementation remains the same
+        self.create_team_members(objective=objective, num_team_members=num_team_members)
         self.assign_tasks_to_team_members(objective=objective)
 
         team_outputs = {}
@@ -216,9 +220,11 @@ class CEO:
             # Prioritize tasks for each team member
             prioritized_task_list = team_member.prioritize_tasks(chroma_instance=self.chroma_instance)
             team_member.task_list = prioritized_task_list
-            
+
+            print(f"Executing tasks for team member {user_id}...")
             # Execute tasks for each team member and store the outputs
             team_outputs[user_id] = team_member.execute_tasks(chroma_instance=self.chroma_instance)
+            print(f"Team Member {user_id} outputs: {team_outputs[user_id]}")
 
         report = self.report_creation_chain.run(
             user_id=self.user_id,
@@ -239,14 +245,24 @@ class CEO:
                     user_id: team_member.expertise_role
                     for user_id, team_member in self.team_members.items()
                 },
+                'user_feedback': user_feedback,
             }
         )
 
-        return report, revised_team_outputs
+        print(f"Report: {report}")
+        print(f"Revised Team Outputs: {revised_team_outputs}")
+
+        return {
+            "report": report,
+            "revised_team_outputs": revised_team_outputs,
+            "team_member_outputs": self.team_member_outputs,
+        }
+
 
 
     def receive_output(self, team_member_id, output):
         self.team_member_outputs[team_member_id] = output
+
 
     def get_team_members_expertise(self):
         team_members_expertise = {}
@@ -255,4 +271,75 @@ class CEO:
         return team_members_expertise
 
 
-    
+    def handle_feedback(self, feedback: str):
+        self.revise_creation_chain.user_feedback = feedback
+
+    ########## Workflow ##########
+    def run_workflow(self, objective: str, num_team_members):
+        # global user_feedback
+        user_feedback = ""
+
+        print("Creating team members...")
+        self.create_team_members(objective=objective, num_team_members=num_team_members)
+        print("Assigning tasks to team members...")
+        self.assign_tasks_to_team_members(objective=objective)
+        print("Executing chains...")
+        results = self.execute_chains(objective=objective, num_team_members=num_team_members, user_feedback=user_feedback)
+        report = results["report"]
+        revised_team_outputs = results["revised_team_outputs"]
+        print("Workflow complete!")
+
+        # Start looping through 2-6
+        while True:
+            # Check if the user wants to provide feedback or exit the loop
+            user_input = input("Type 'feedback' to provide feedback or 'exit' to stop the workflow: ").strip().lower()
+            if user_input == "feedback":
+                user_feedback = input("Please provide your feedback: ")
+            elif user_input == "exit":
+                break
+            else:
+                print("Invalid input. Please type 'feedback' or 'exit'.")
+                continue
+
+            print("Assigning tasks to team members...")
+            self.assign_tasks_to_team_members(objective=objective)
+            print("Executing chains...")
+            results = self.execute_chains(objective=objective, num_team_members=num_team_members)
+            report = results["report"]
+            revised_team_outputs = results["revised_team_outputs"]
+
+        # Return the final report and revised team outputs for further use
+        return report, revised_team_outputs
+
+
+# this is for the user to interact with the system
+class UserMessageHandler:
+    def __init__(self, ceo: CEO):
+        self.ceo = ceo
+        
+        self.conversation_memory = ConversationBufferWindowMemory()
+        generic_prompt = PromptTemplate(
+            template="User message: {user_message}",
+            input_variables=["user_message"],
+        )
+        self.llm_chain = LLMChain(llm=self.ceo.role_creation_chain.llm, prompt=generic_prompt, memory=self.conversation_memory)
+        
+    def process_message(self, message: str):
+        message = message.lower().strip()
+
+        if "set objective" in message:
+            objective = input("Enter the objective: ").strip()
+            num_team_members = int(input("Enter the number of team members: ").strip())
+            report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
+            print("\nReport:")
+            print(report)
+            print("\nRevised Team Outputs:")
+            print(revised_team_outputs)
+
+        elif "provide feedback" in message:
+            feedback = input("Enter your feedback: ").strip()
+            self.ceo.handle_feedback(feedback)
+
+        else:
+            response = self.llm_chain.run(user_message=message)
+            return response

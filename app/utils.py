@@ -41,3 +41,5 @@ search_tool = Tool(
 #     func=google.run,
 #     description="A search tool utilizing Google Search API to provide answers to questions related to current events, news, and general information."
 # )
+
+# for agents that use OpenAI and serpapi

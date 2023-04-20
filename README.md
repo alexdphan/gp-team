@@ -29,3 +29,5 @@ no tools for now
 
 implement selenium (use code to browse web (refer autogpt))
 use dolly v2
+
+would be cool to have gpteam create a host on aws

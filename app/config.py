@@ -115,3 +115,5 @@ class Config(metaclass=Singleton):
         self.debug_mode = value
         
 config = Config()
+
+# use file later for organization
