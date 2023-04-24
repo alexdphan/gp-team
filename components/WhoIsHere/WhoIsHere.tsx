@@ -2,12 +2,12 @@ import { ClientSideSuspense } from "@liveblocks/react";
 import { RoomProvider, useOthers } from "../../liveblocks.config";
 
 function WhoIsHere() {
-  const userCount = useOthers((others) => others.length);
+  const userCount = useOthers((others) => (others ? others.length : 0));
 
   return (
     <div className="inline-flex items-center px-2 py-1 bg-[#f8e4cb] rounded-md font-medium text-sm m-3">
       <span className="text-gray-700">{userCount}</span>
-      <span className="text-gray-600 ml-1">
+      <span className="ml-1 text-gray-600">
         {userCount === 1 ? "user online" : "users online"}
       </span>
     </div>

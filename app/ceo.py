@@ -164,6 +164,7 @@ class CEO:
         self.task_prioritization_chain = TaskPrioritizationChain.from_llm(role_creation_chain.llm)
         self.execution_chain = ExecutionChain.from_llm(revise_creation_chain.llm)
 
+
     def get_new_user_id(self):
         self.user_id += 1
         return f"user_{self.user_id}"
@@ -237,18 +238,17 @@ class CEO:
         )
 
         revised_team_outputs = self.revise_creation_chain.run(
-            {
-                'user_id': self.user_id,
-                'objective': objective,
-                'chroma_instance': self.chroma_instance,
-                'team_members_expertise': {
-                    user_id: team_member.expertise_role
-                    for user_id, team_member in self.team_members.items()
-                },
-                'user_feedback': user_feedback,
-            }
-        )
-
+                    {
+                        'user_id': self.user_id,
+                        'objective': objective,
+                        'chroma_instance': self.chroma_instance,
+                        'team_members_expertise': {
+                            user_id: team_member.expertise_role
+                            for user_id, team_member in self.team_members.items()
+                        },
+                        'user_feedback': self.user_feedback,  # Pass the user_feedback attribute from the CEO object
+                    }
+                )
         print(f"Report: {report}")
         print(f"Revised Team Outputs: {revised_team_outputs}")
 
@@ -272,7 +272,7 @@ class CEO:
 
 
     def handle_feedback(self, feedback: str):
-        self.revise_creation_chain.user_feedback = feedback
+        self.user_feedback = feedback  # Set the user_feedback attribute on the CEO object
 
     ########## Workflow ##########
     def run_workflow(self, objective: str, num_team_members):
@@ -311,7 +311,7 @@ class CEO:
         # Return the final report and revised team outputs for further use
         return report, revised_team_outputs
 
-
+# somethign commint
 # this is for the user to interact with the system
 class UserMessageHandler:
     def __init__(self, ceo: CEO):
@@ -324,7 +324,7 @@ class UserMessageHandler:
         )
         self.llm_chain = LLMChain(llm=self.ceo.role_creation_chain.llm, prompt=generic_prompt, memory=self.conversation_memory)
         
-    def process_message(self, message: str):
+    def process_message(self, message: str, objective: str = None, num_team_members: int = None):
         message = message.lower().strip()
 
         if "set objective" in message:
@@ -335,11 +335,18 @@ class UserMessageHandler:
             print(report)
             print("\nRevised Team Outputs:")
             print(revised_team_outputs)
+            return report, revised_team_outputs
 
         elif "provide feedback" in message:
             feedback = input("Enter your feedback: ").strip()
             self.ceo.handle_feedback(feedback)
+            return "Feedback received."
 
         else:
             response = self.llm_chain.run(user_message=message)
             return response
+
+    async def handle_input(self, user_input: str) -> str:
+        response = self.process_message(user_input)
+        return response
+    
