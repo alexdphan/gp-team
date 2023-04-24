@@ -188,6 +188,15 @@ class ReviseCreationChain(LLMChain):
         input_variables=["user_id", "chroma_instance", "objective", "team_members_expertise", "user_feedback"],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
+    
+class ListParser: # outside of CEO class because it is not specific to CEO
+    @staticmethod
+    def parse(input_str: str, delimiter: str = ";", item_separator: str = ","):
+        result = []
+        groups = input_str.split(delimiter)
+        for group in groups:
+            result.append(group.split(item_separator))
+        return result
 
 class CEO:
     def __init__(
@@ -249,15 +258,6 @@ class CEO:
 
         for user_id, task_list in zip(self.team_members.keys(), task_lists):
             self.team_members[user_id].task_list = task_list
-            
-        class ListParser:
-            @staticmethod
-            def parse(input_str: str, delimiter: str = ";", item_separator: str = ","):
-                result = []
-                groups = input_str.split(delimiter)
-                for group in groups:
-                    result.append(group.split(item_separator))
-                return result
 
 
     def get_team_members_expertise(self):
@@ -281,16 +281,16 @@ class CEO:
             team_members_expertise=self.get_team_members_expertise(),
         )
 
-        
+        self.team_member_outputs = team_outputs
+
         revised_team_outputs = self.revise_creation_chain.run(
-        {
-            'user_id': self.user_id,
-            'objective': objective,
-            'chroma_instance': self.chroma_instance,
-            'team_members_expertise': self.get_team_members_expertise(),
-            'user_feedback': self.user_feedback,
-        }
-    )
+            user_id=self.user_id,
+            objective=objective,
+            chroma_instance=self.chroma_instance,
+            team_members_expertise=self.get_team_members_expertise(),
+            user_feedback=self.user_feedback,
+            team_outputs=team_outputs,
+        )
 
         return {
             "report": report,
@@ -309,6 +309,20 @@ class CEO:
 
     def handle_feedback(self, feedback: str):
         self.user_feedback = feedback  # Set the user_feedback attribute on the CEO object
+        
+    def collect_team_member_outputs(self):
+        for team_member_id, team_member in self.team_members.items():
+            self.team_member_outputs[team_member_id] = team_member.execute_tasks()
+            
+    def generate_reports(self):
+        report = self.report_creation_chain.run(
+            user_id=self.user_id,
+            team_member_outputs=self.team_member_outputs,
+            team_members=self.team_members,
+            chroma_instance=self.chroma_instance,
+            user_feedback=self.user_feedback,
+        )
+        return report
 
 
     ########## Workflow ##########
@@ -341,8 +355,10 @@ class UserMessageHandler:
         message = message.lower().strip()
 
         if "set objective" in message:
-            objective = input("Enter the objective: ").strip()
-            num_team_members = int(input("Enter the number of team members: ").strip())
+            if not objective:
+                objective = input("Enter the objective: ").strip()
+            if not num_team_members:
+                num_team_members = int(input("Enter the number of team members: ").strip())
             report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
             print("\nReport:")
             print(report)
