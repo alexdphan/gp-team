@@ -321,7 +321,7 @@ class CEO:
             "revised_team_outputs": revised_team_outputs,
             "team_member_outputs": team_outputs,
         }
-    
+
     def receive_output(self, team_member_id, output):
         """Receive output from a team member. This is used to receive output from a team member."""
         self.team_member_outputs[team_member_id] = output
@@ -356,7 +356,24 @@ class CEO:
 
 
     ########## Workflow ##########
-    def run_workflow(self, objective: str, num_team_members):
+    # def run_workflow(self, objective: str, num_team_members):
+    #     print("Creating team members...")
+    #     self.create_team_members(objective=objective, num_team_members=num_team_members)
+    #     print("Assigning tasks to team members...")
+    #     self.assign_tasks_to_team_members(objective=objective)
+    #     print("Executing chains...")
+    #     results = self.execute_chains(objective=objective, num_team_members=num_team_members, user_feedback=self.user_feedback)
+    #     report = results["report"]
+    #     revised_team_outputs = results["revised_team_outputs"]
+    #     print("Workflow complete!")
+
+    #     return report, revised_team_outputs
+
+    def run_workflow(self, objective: str, num_team_members: int):
+        # Input validation for objective and num_team_members
+        if not objective or not isinstance(num_team_members, int) or num_team_members <= 0:
+            raise ValueError("Invalid input for objective or num_team_members.")
+        
         print("Creating team members...")
         self.create_team_members(objective=objective, num_team_members=num_team_members)
         print("Assigning tasks to team members...")
@@ -369,12 +386,55 @@ class CEO:
 
         return report, revised_team_outputs
 
+# class UserMessageHandler:
+#     def __init__(self, ceo: CEO):
+#         self.ceo = ceo
+        
+#         self.conversation_memory = ConversationBufferWindowMemory()
+#         generic_prompt = PromptTemplate(
+#             template="User message: {user_message}",
+#             input_variables=["user_message"],
+#         )
+#         self.llm_chain = LLMChain(llm=self.ceo.role_creation_chain.llm, prompt=generic_prompt, memory=self.conversation_memory)
+        
+#     def process_message(self, message: str, objective: str = None, num_team_members: int = None):
+#         message = message.lower().strip()
+
+#         if "set objective" in message:
+#             if not objective:
+#                 objective = input("Enter the objective: ").strip()
+#             if not num_team_members:
+#                 num_team_members = int(input("Enter the number of team members: ").strip())
+#             report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
+#             print("\nReport:")
+#             print(report)
+#             print("\nRevised Team Outputs:")
+#             print(revised_team_outputs)
+#             return report, revised_team_outputs
+
+#         elif "provide feedback" in message:
+#             feedback = input("Enter your feedback: ").strip()
+#             self.ceo.handle_feedback(feedback)
+#             return "Feedback received."
+
+#         else:
+#             response = self.llm_chain.run(user_message=message)
+#             return response
+
+#     async def handle_input(self, user_input: str) -> str:
+#         response = self.process_message(user_input)
+#         return response
 
 class UserMessageHandler:
+    """This class is used to handle user messages. This includes setting the objective, providing feedback, and processing user messages."""
     def __init__(self, ceo: CEO):
+        """Initialize the UserMessageHandler class."""
         self.ceo = ceo
         
+        # Initialize the conversation memory and the LLM chain
+        # Uses ConversationBufferWindowMemory and PromptTemplate from the LLM package to be able to store the conversation history
         self.conversation_memory = ConversationBufferWindowMemory()
+        # Uses basic prompt template to be able to store the user message
         generic_prompt = PromptTemplate(
             template="User message: {user_message}",
             input_variables=["user_message"],
@@ -382,13 +442,14 @@ class UserMessageHandler:
         self.llm_chain = LLMChain(llm=self.ceo.role_creation_chain.llm, prompt=generic_prompt, memory=self.conversation_memory)
         
     def process_message(self, message: str, objective: str = None, num_team_members: int = None):
+        """This is used to process a user message. This includes taking in a user message, the objective, and the number of team members. Then it returns a response."""
         message = message.lower().strip()
 
+        # If the user message contains "set objective", then the objective and number of team members are requested from the user
         if "set objective" in message:
-            if not objective:
-                objective = input("Enter the objective: ").strip()
-            if not num_team_members:
-                num_team_members = int(input("Enter the number of team members: ").strip())
+            # Input handling can be modified for non-interactive contexts
+            objective = input("Enter the objective: ").strip()
+            num_team_members = int(input("Enter the number of team members: ").strip())
             report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
             print("\nReport:")
             print(report)
@@ -396,16 +457,21 @@ class UserMessageHandler:
             print(revised_team_outputs)
             return report, revised_team_outputs
 
+        # If the user types "provide feedback", then the user is prompted to enter their feedback and the feedback is handled
         elif "provide feedback" in message:
+            # Input handling can be modified for non-interactive contexts
             feedback = input("Enter your feedback: ").strip()
             self.ceo.handle_feedback(feedback)
             return "Feedback received."
 
+        # Additional user message handling cases can be added here
+        # Else, the user message is processed by the LLM chain as a regular user message, which returns a natural language response
         else:
             response = self.llm_chain.run(user_message=message)
             return response
 
-    async def handle_input(self, user_input: str) -> str:
+    # Changed to regular method (def) instead of async def. This is because the user message handler is not used in an async context. For example, the user message handler is not used in a fastapi endpoint.
+    def handle_input(self, user_input: str) -> str:
         response = self.process_message(user_input)
         return response
     
