@@ -83,10 +83,10 @@ class TaskCreationAssignChain(LLMChain):
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
-        
+
     def generate_new_task_list(self, vectorstore: Chroma, result: Dict, task_description: str, task_list: List[str], objective: str, top_k: int) -> List[Dict]:
         """
-        Get the next task based on team members' expertise, the objective, and the Chroma instance.
+        Get the next task based on team members' expertise, the objective, and the Chroma instance. We use it then to get the top k tasks from the Chroma instance as a starting point and add them to the current task list.
 
         Args:
             vectorstore (Chroma): A Chroma instance containing information to consider.
@@ -99,8 +99,11 @@ class TaskCreationAssignChain(LLMChain):
         Returns:
             List[Dict]: A list of dictionaries, each containing a task name.
         """
-        top_tasks = self.get_top_tasks(vectorstore, task_description, top_k)
+        # get top k tasks from the chain instance from the TaskCreationAssignChain class (method below)
+        top_tasks = self.get_top_tasks(vectorstore, task_description, top_k) 
+         # add the top k tasks to the current task list
         task_list.extend(top_tasks)
+         # join the tasks in the task list into a string
         incomplete_tasks = ", ".join(task_list)
 
         response = self.run(
@@ -115,8 +118,6 @@ class TaskCreationAssignChain(LLMChain):
         return [{"task_name": task_name.strip()} for task_name in new_tasks if task_name.strip()]
 
     
-    # used to help the chain generate tasks for each team member based on their expertise, the objective, and the Chroma instance
-    # used within the generate_new_task_list function
     def get_top_tasks(self, vectorstore: Chroma, query: str, k: int) -> List[str]:
             """
             Get the top k tasks based on the query. This is used when the CEO is creating a new task list,
@@ -139,8 +140,9 @@ class TaskCreationAssignChain(LLMChain):
                 except KeyError:
                     # Log a relevant message or remove the logging statement if it's not necessary
                     logging.warning(f"KeyError occurred while processing the metadata for item: {item}")
-
+            # return a list of tasks
             return tasks
+        
 
 class ReportCreationChain(LLMChain):
     """Chain to generate a report."""
@@ -188,7 +190,8 @@ class ReviseCreationChain(LLMChain):
         input_variables=["user_id", "chroma_instance", "objective", "team_members_expertise", "user_feedback"],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
-    
+
+# this class is for parsing lists of lists, e.g. [[1,2,3],[4,5,6]]
 class ListParser: # outside of CEO class because it is not specific to CEO
     @staticmethod
     def parse(input_str: str, delimiter: str = ";", item_separator: str = ","):
@@ -197,8 +200,10 @@ class ListParser: # outside of CEO class because it is not specific to CEO
         for group in groups:
             result.append(group.split(item_separator))
         return result
+        # for example, if input_str = "1,2,3;4,5,6", then result = [[1,2,3],[4,5,6]]
 
 class CEO:
+    """ CEO class for the CEO role in the team. The CEO is responsible for creating a team, assigning tasks to team members, creating a report, and revising the outputs of each team member. """
     def __init__(
         self,
         chroma_instance: Chroma,
@@ -221,17 +226,22 @@ class CEO:
         self.execution_chain = LLMChain.from_llm(revise_creation_chain.llm)
 
     def get_new_user_id(self):
+        """Get a new user id for a new team member. For example, user_1, user_2, etc. This is used to create a new team member."""
         self.user_id += 1
         return f"user_{self.user_id}"
 
     def create_team_members(self, objective, num_team_members):
+        """Create team members and assign expertise roles based on the team's objective and the Chroma instance."""
         roles = self.role_creation_chain.run(
             user_id=self.user_id,
             objective=objective,
             chroma_instance=self.chroma_instance,
         )
+        # parse the roles into a list of lists, for example, [[1,2,3],[4,5,6]]
         expertise_roles = roles.strip().split("\n")[:num_team_members]
+        # example: expertise_roles = ["1,2,3", "4,5,6"]
 
+        # for each expertise role, create a team member using the create_team_member function
         for i, role in enumerate(expertise_roles):
             team_member_id = f"{self.user_id}-{i + 1}"
             team_member = create_team_member(
@@ -243,46 +253,59 @@ class CEO:
                 objective=objective,
             ) 
             self.team_members[team_member_id] = team_member
+            # example output: self.team_members = {"user_1-1": TeamMember(user_id="user_1-1", expertise_role="1,2,3", task_list=[], task_prioritization_chain=LLMChain, execution_chain=LLMChain, objective="objective"), "user_1-2": TeamMember(user_id="user_1-2", expertise_role="4,5,6", task_list=[], task_prioritization_chain=LLMChain, execution_chain=LLMChain, objective="objective")}
     
-
     def assign_tasks_to_team_members(self, objective: str):
+        """Assign tasks to each team member based on their expertise and the team's objective. This is for the CEO to assign tasks to each team member. This is done by running the task creation and assignment chain."""
         team_members_expertise = self.get_team_members_expertise()
 
+        # run the task creation and assignment chain, creating a task list for each team member
         task_lists = self.task_creation_assign_chain.run(
             user_id=self.user_id,
             objective=objective,
             chroma_instance=self.chroma_instance,
             team_members_expertise=team_members_expertise,
         )
+        # parse the task lists into a list of lists, for example, [[1,2,3],[4,5,6]]
         task_lists = ListParser.parse(task_lists)
 
+        # for each team member, assign the task list to the team member
         for user_id, task_list in zip(self.team_members.keys(), task_lists):
             self.team_members[user_id].task_list = task_list
 
-
     def get_team_members_expertise(self):
+        """Get the expertise of each team member. This is used to assign tasks to each team member in the assign_tasks_to_team_members function."""
         return {user_id: team_member.expertise_role for user_id, team_member in self.team_members.items()}
         # reutrns a dictionary of user_id: expertise_role for each team member, this is generated from the role creation chain
 
     def execute_chains(self, objective: str, num_team_members: int, user_feedback: str):
+        """Execute the task prioritization and execution chains for each team member. This is used to execute the task prioritization and execution chains for each team member."""
+        # create team members
         self.create_team_members(objective=objective, num_team_members=num_team_members)
+        # assign tasks to team members
         self.assign_tasks_to_team_members(objective=objective)
 
+        # team_outputs is a dictionary of user_id: output for each team member
         team_outputs = {}
+        
+        # for each team member, prioritize tasks and execute tasks
         for user_id, team_member in self.team_members.items():
+            """Prioritize tasks and execute tasks for each team member."""
             prioritized_task_list = team_member.prioritize_tasks(chroma_instance=self.chroma_instance)
             team_member.task_list = prioritized_task_list
             team_outputs[user_id] = team_member.execute_tasks(chroma_instance=self.chroma_instance)
 
+        # create a report using the report creation chain (executed by the CEO)
         report = self.report_creation_chain.run(
             user_id=self.user_id,
             objective=objective,
             chroma_instance=self.chroma_instance,
             team_members_expertise=self.get_team_members_expertise(),
         )
-
+        # this code assigns team_member_outputs array to the team_outputs dictionary
         self.team_member_outputs = team_outputs
 
+        # uses the revise creation chain to receive user feedback and revise the team outputs, and produce revised team outputs and a report
         revised_team_outputs = self.revise_creation_chain.run(
             user_id=self.user_id,
             objective=objective,
@@ -292,29 +315,36 @@ class CEO:
             team_outputs=team_outputs,
         )
 
+        # return a dictionary of the report, revised team outputs, and team member outputs
         return {
             "report": report,
             "revised_team_outputs": revised_team_outputs,
             "team_member_outputs": team_outputs,
         }
-
+    
     def receive_output(self, team_member_id, output):
+        """Receive output from a team member. This is used to receive output from a team member."""
         self.team_member_outputs[team_member_id] = output
 
+
     def get_team_members_expertise(self):
+        """Get the expertise of each team member. This is used to assign tasks to each team member in the assign_tasks_to_team_members function."""
         team_members_expertise = {}
         for team_member_id, team_member_instance in self.team_members.items():
             team_members_expertise[team_member_id] = team_member_instance.expertise_role
         return team_members_expertise
 
     def handle_feedback(self, feedback: str):
+        """Handle feedback from the user. This is used to handle feedback from the user."""
         self.user_feedback = feedback  # Set the user_feedback attribute on the CEO object
         
     def collect_team_member_outputs(self):
+        """Collect the outputs from each team member. This is used to collect the outputs from each team member."""
         for team_member_id, team_member in self.team_members.items():
             self.team_member_outputs[team_member_id] = team_member.execute_tasks()
             
     def generate_reports(self):
+        """Generate reports for the CEO. This is used to generate reports for the CEO."""
         report = self.report_creation_chain.run(
             user_id=self.user_id,
             team_member_outputs=self.team_member_outputs,
@@ -378,3 +408,6 @@ class UserMessageHandler:
     async def handle_input(self, user_input: str) -> str:
         response = self.process_message(user_input)
         return response
+    
+    
+    # great, now use fastapi, openai from langchain, and chroma initialization to create endpoints that the user would use for this project application.
