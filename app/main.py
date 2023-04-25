@@ -80,3 +80,77 @@
 
 #     response = await ceo.run_workflow(user_input)
 #     return {"response": response}
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from ceo import CEO, RoleCreationChain, TaskCreationAssignChain, ReportCreationChain, ReviseCreationChain, UserMessageHandler
+from team_member import TeamMember
+from langchain.vectorstores import Chroma
+from langchain.llms.openai import OpenAI
+from langchain.embeddings import OpenAIEmbeddings
+from fastapi.middleware.cors import CORSMiddleware
+import os
+from dotenv import load_dotenv
+from langchain.prompts.prompt import PromptTemplate
+from langchain.memory import ConversationBufferWindowMemory
+
+# Set Variables
+load_dotenv()
+
+# Read API keys from environment variables
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+
+# Define your embedding model
+embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+
+YOUR_TABLE_NAME = os.getenv("TABLE_NAME", "")
+assert YOUR_TABLE_NAME, "TABLE_NAME environment variable is missing from .env"
+table_name = YOUR_TABLE_NAME
+
+persist_directory = "db"
+
+chroma_instance = (
+    Chroma(table_name, embeddings_model,
+           persist_directory=persist_directory)
+)
+
+# Initialize LLM instance with the API key
+llm = OpenAI(api_key=OPENAI_API_KEY)
+
+# Initialize the CEO module and all chains
+role_creation_chain = RoleCreationChain.from_llm(llm)
+task_creation_assign_chain = TaskCreationAssignChain.from_llm(llm)
+report_creation_chain = ReportCreationChain.from_llm(llm)
+revise_creation_chain = ReviseCreationChain.from_llm(llm)
+
+app = FastAPI()
+
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class UserMessageInput(BaseModel):
+    message: str
+
+
+@app.post("/user_message")
+async def user_message(input_data: UserMessageInput):
+    print(input_data.message)
+    ceo = CEO(llm, chroma_instance, task_creation_assign_chain, role_creation_chain, report_creation_chain, revise_creation_chain)
+    print(ceo)
+    user_message_handler = UserMessageHandler(ceo)
+    print(user_message_handler)
+    response = user_message_handler.process_message(message=input_data.message)
+    print(response)
+    return {"response": response}
+
+

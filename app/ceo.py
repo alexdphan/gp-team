@@ -156,14 +156,14 @@ class ReportCreationChain(LLMChain):
             " Team members and their expertise roles: {team_members_expertise}."
             " Consider the information from the Chroma Instance: {chroma_instance}."
             " Please update the report with the latest information."
-            "\n\nAction: {{action}}"
-            " Action Input: {{action_input}}"
-            " Thought: {{thought}}"
-            " Final Answer: {{final_answer}}"
+            "\n\nAction: {action}"
+            " Action Input: {action_input}"
+            " Thought: {thought}"
+            " Final Answer: {final_answer}"
         )
         prompt = PromptTemplate(
             template=prompt_template,
-            input_variables=["user_id", "chroma_instance", "objective", "team_members_expertise"],
+            input_variables=["user_id", "chroma_instance", "objective", "team_members_expertise", "action", "action_input", "thought", "final_answer"],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
@@ -206,12 +206,14 @@ class CEO:
     """ CEO class for the CEO role in the team. The CEO is responsible for creating a team, assigning tasks to team members, creating a report, and revising the outputs of each team member. """
     def __init__(
         self,
+        llm: BaseLLM,
         chroma_instance: Chroma,
         role_creation_chain: LLMChain,
         task_creation_assign_chain: LLMChain,
         report_creation_chain: LLMChain,
         revise_creation_chain: LLMChain,
     ):
+        self.llm = llm
         self.chroma_instance = chroma_instance
         self.role_creation_chain = role_creation_chain
         self.task_creation_assign_chain = task_creation_assign_chain
@@ -222,8 +224,15 @@ class CEO:
         self.user_id = 0
         self.user_feedback = ""
 
-        self.task_prioritization_chain = LLMChain.from_llm(role_creation_chain.llm)
-        self.execution_chain = LLMChain.from_llm(revise_creation_chain.llm)
+        generic_prompt = PromptTemplate(
+            # variable_name is placeholder for the variable name
+            template="{variable_name}",  # Specify the variable name inside the placeholder
+            input_variables=["variable_name"],  # Add the variable name to the input_variables list
+        )
+
+        
+        self.task_prioritization_chain = LLMChain(llm=self.llm, prompt=generic_prompt)
+        self.execution_chain = LLMChain(llm=self.llm, prompt=generic_prompt)
 
     def get_new_user_id(self):
         """Get a new user id for a new team member. For example, user_1, user_2, etc. This is used to create a new team member."""
@@ -351,6 +360,7 @@ class CEO:
             team_members=self.team_members,
             chroma_instance=self.chroma_instance,
             user_feedback=self.user_feedback,
+            
         )
         return report
 
