@@ -28,19 +28,19 @@ class RoleCreationChain(LLMChain):
     def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
         """Get the response parser."""
         prompt_template = (
-            "You are an AI tasked with creating roles for a team based on their expertise and the team's objective. Format: Role Name, Expertise Role 1, Expertise Role 2, ..."
+            "You are an AI tasked with creating roles and their expertise for a team based on the team's objective."
             " User ID: {user_id}. Objective: {objective}. Number of Team Members: {num_team_members}."
             " Consider the information from the Chroma Instance: {chroma_instance}."
             "\n\nPlease provide your response in the following format:"
             "\nAction: [describe the action]"
             "\nAction Input: [describe the input for the action]"
             "\nThought: [describe the thought process]"
-            "\nFinal Answer: [provide the final answer]"
+            "\nFinal Answer: Role Name, Expertise 1, Expertise 2, ..."
             "\n\nExample:"
-            "\nAction: Create roles"
+            "\nAction: Create roles and expertise"
             "\nAction Input: Objective, Chroma Instance, Number of Team Members"
-            "\nThought: Based on the objective and the chroma instance, the necessary roles can be..."
-            "\nFinal Answer: Role Name, Expertise Role 1, Expertise Role 2, ..."
+            "\nThought: Based on the objective and the chroma instance, the necessary roles and their expertise can be..."
+            "\nFinal Answer: Role Name, Expertise 1, Expertise 2, ..."
         )
         prompt = PromptTemplate(
             template=prompt_template,
@@ -248,13 +248,14 @@ class CEO:
         
         Takes in the team's objective, the number of team members, and the team members' expertise roles. For example, if the objective is to create a report, then the CEO will create a team of 3 team members, where each team member has a different expertise role: 1) creating a report, 2) revising a report, and 3) executing a report.
         """
-        roles = self.role_creation_chain.run(
-            user_id=self.user_id,
-            objective=objective,
-            chroma_instance=self.chroma_instance,
-            num_team_members=num_team_members,
-            # team_members_expertise={},
-        )
+        roles_input = {
+            "user_id": str(self.user_id),
+            "objective": objective,
+            "chroma_instance": self.chroma_instance,
+            "num_team_members": num_team_members,
+        }
+        roles = self.role_creation_chain.run(roles_input)
+        
         # parse the roles into a list of lists, for example, [[1,2,3],[4,5,6]]
         expertise_roles = roles.strip().split("\n")[:num_team_members]
         # example: expertise_roles = ["1,2,3", "4,5,6"]
