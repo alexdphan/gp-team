@@ -84,7 +84,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from ceo import CEO, RoleCreationChain, TaskCreationAssignChain, ReportCreationChain, ReviseCreationChain, UserMessageHandler
-from team_member import TeamMember
+from team_member import TeamMember, create_team_member, TaskPrioritizationChain, ExecutionChain
 from langchain.vectorstores import Chroma
 from langchain.llms.openai import OpenAI
 from langchain.embeddings import OpenAIEmbeddings
@@ -122,6 +122,9 @@ role_creation_chain = RoleCreationChain.from_llm(llm)
 task_creation_assign_chain = TaskCreationAssignChain.from_llm(llm)
 report_creation_chain = ReportCreationChain.from_llm(llm)
 revise_creation_chain = ReviseCreationChain.from_llm(llm)
+# Initialize the Team Member module and all chains
+task_prioritization_chain = TaskPrioritizationChain.from_llm(llm)
+execution_chain = ExecutionChain.from_llm(llm)
 
 app = FastAPI()
 

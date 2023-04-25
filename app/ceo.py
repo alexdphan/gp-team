@@ -29,7 +29,7 @@ class RoleCreationChain(LLMChain):
         """Get the response parser."""
         prompt_template = (
             "You are an AI tasked with creating roles for a team based on their expertise and the team's objective. Format: Role Name, Expertise Role 1, Expertise Role 2, ..."
-            " User ID: {user_id}. Objective: {objective}."
+            " User ID: {user_id}. Objective: {objective}. Number of Team Members: {num_team_members}."
             " Consider the information from the Chroma Instance: {chroma_instance}."
             "\n\nPlease provide your response in the following format:"
             "\nAction: [describe the action]"
@@ -38,16 +38,17 @@ class RoleCreationChain(LLMChain):
             "\nFinal Answer: [provide the final answer]"
             "\n\nExample:"
             "\nAction: Create roles"
-            "\nAction Input: Objective, Chroma Instance"
+            "\nAction Input: Objective, Chroma Instance, Number of Team Members"
             "\nThought: Based on the objective and the chroma instance, the necessary roles can be..."
             "\nFinal Answer: Role Name, Expertise Role 1, Expertise Role 2, ..."
         )
         prompt = PromptTemplate(
             template=prompt_template,
-            input_variables=["user_id", "chroma_instance", "objective"],
+            input_variables=["user_id", "chroma_instance", "objective", "num_team_members"],
         )
-        return cls(prompt=prompt, llm=llm, verbose=verbose) 
-       
+        return cls(prompt=prompt, llm=llm, verbose=verbose)
+
+
 
 class TaskCreationAssignChain(LLMChain):
     """Chain to generate and assign tasks."""
@@ -239,12 +240,20 @@ class CEO:
         self.user_id += 1
         return f"user_{self.user_id}"
 
-    def create_team_members(self, objective, num_team_members):
-        """Create team members and assign expertise roles based on the team's objective and the Chroma instance."""
+    def create_team_members(self, objective: str, num_team_members: int):
+        """
+        Create team members and assign expertise roles based on the team's objective and the Chroma instance.
+        
+        Creates a team_member from team_member.py. Then, assigns an expertise role to the team member based on the team's objective and the Chroma instance. It all goes into a dictionary of team members, where the key is the user id and the value is the team member.
+        
+        Takes in the team's objective, the number of team members, and the team members' expertise roles. For example, if the objective is to create a report, then the CEO will create a team of 3 team members, where each team member has a different expertise role: 1) creating a report, 2) revising a report, and 3) executing a report.
+        """
         roles = self.role_creation_chain.run(
             user_id=self.user_id,
             objective=objective,
             chroma_instance=self.chroma_instance,
+            num_team_members=num_team_members,
+            # team_members_expertise={},
         )
         # parse the roles into a list of lists, for example, [[1,2,3],[4,5,6]]
         expertise_roles = roles.strip().split("\n")[:num_team_members]
@@ -287,7 +296,7 @@ class CEO:
         return {user_id: team_member.expertise_role for user_id, team_member in self.team_members.items()}
         # reutrns a dictionary of user_id: expertise_role for each team member, this is generated from the role creation chain
 
-    def execute_chains(self, objective: str, num_team_members: int, user_feedback: str):
+    def execute_chains(self, objective: str, num_team_members: int):
         """Execute the task prioritization and execution chains for each team member. This is used to execute the task prioritization and execution chains for each team member."""
         # create team members
         self.create_team_members(objective=objective, num_team_members=num_team_members)
@@ -366,74 +375,30 @@ class CEO:
 
 
     ########## Workflow ##########
-    # def run_workflow(self, objective: str, num_team_members):
-    #     print("Creating team members...")
-    #     self.create_team_members(objective=objective, num_team_members=num_team_members)
-    #     print("Assigning tasks to team members...")
-    #     self.assign_tasks_to_team_members(objective=objective)
-    #     print("Executing chains...")
-    #     results = self.execute_chains(objective=objective, num_team_members=num_team_members, user_feedback=self.user_feedback)
-    #     report = results["report"]
-    #     revised_team_outputs = results["revised_team_outputs"]
-    #     print("Workflow complete!")
-
-    #     return report, revised_team_outputs
-
-    def run_workflow(self, objective: str, num_team_members: int):
+    def run_workflow(self, objective: str, num_team_members: int, user_feedback: str = None):
         # Input validation for objective and num_team_members
         if not objective or not isinstance(num_team_members, int) or num_team_members <= 0:
             raise ValueError("Invalid input for objective or num_team_members.")
         
-        print("Creating team members...")
-        self.create_team_members(objective=objective, num_team_members=num_team_members)
-        print("Assigning tasks to team members...")
-        self.assign_tasks_to_team_members(objective=objective)
-        print("Executing chains...")
-        results = self.execute_chains(objective=objective, num_team_members=num_team_members, user_feedback=self.user_feedback)
-        report = results["report"]
-        revised_team_outputs = results["revised_team_outputs"]
-        print("Workflow complete!")
-
-        return report, revised_team_outputs
-
-# class UserMessageHandler:
-#     def __init__(self, ceo: CEO):
-#         self.ceo = ceo
-        
-#         self.conversation_memory = ConversationBufferWindowMemory()
-#         generic_prompt = PromptTemplate(
-#             template="User message: {user_message}",
-#             input_variables=["user_message"],
-#         )
-#         self.llm_chain = LLMChain(llm=self.ceo.role_creation_chain.llm, prompt=generic_prompt, memory=self.conversation_memory)
-        
-#     def process_message(self, message: str, objective: str = None, num_team_members: int = None):
-#         message = message.lower().strip()
-
-#         if "set objective" in message:
-#             if not objective:
-#                 objective = input("Enter the objective: ").strip()
-#             if not num_team_members:
-#                 num_team_members = int(input("Enter the number of team members: ").strip())
-#             report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
-#             print("\nReport:")
-#             print(report)
-#             print("\nRevised Team Outputs:")
-#             print(revised_team_outputs)
-#             return report, revised_team_outputs
-
-#         elif "provide feedback" in message:
-#             feedback = input("Enter your feedback: ").strip()
-#             self.ceo.handle_feedback(feedback)
-#             return "Feedback received."
-
-#         else:
-#             response = self.llm_chain.run(user_message=message)
-#             return response
-
-#     async def handle_input(self, user_input: str) -> str:
-#         response = self.process_message(user_input)
-#         return response
+        try:
+            print("Creating team members...")
+            self.create_team_members(objective=objective, num_team_members=num_team_members)
+            
+            print("Assigning tasks to team members...")
+            team_members_expertise = self.get_team_members_expertise()
+            self.assign_tasks_to_team_members(objective=objective, team_members_expertise=team_members_expertise)
+            
+            print("Executing chains...")
+            results = self.execute_chains(objective=objective, num_team_members=num_team_members, user_feedback=self.user_feedback)
+            
+            report = results["report"]
+            revised_team_outputs = results["revised_team_outputs"]
+            print("Workflow complete!")
+            
+            return report, revised_team_outputs
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            raise
 
 class UserMessageHandler:
     """This class is used to handle user messages. This includes setting the objective, providing feedback, and processing user messages."""
@@ -460,7 +425,7 @@ class UserMessageHandler:
             # Input handling can be modified for non-interactive contexts
             objective = input("Enter the objective: ").strip()
             num_team_members = int(input("Enter the number of team members: ").strip())
-            report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
+            report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members, user_feedback=self.ceo.user_feedback)
             print("\nReport:")
             print(report)
             print("\nRevised Team Outputs:")
