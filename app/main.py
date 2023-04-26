@@ -148,6 +148,7 @@ class UserMessageInput(BaseModel):
 @app.post("/user_message")
 async def user_message(input_data: UserMessageInput):
     print(input_data.message)
+    # ceo = CEO(llm, chroma_instance, task_creation_assign_chain, role_creation_chain, report_creation_chain, revise_creation_chain, task_prioritization_chain, execution_chain)
     ceo = CEO(llm, chroma_instance, task_creation_assign_chain, role_creation_chain, report_creation_chain, revise_creation_chain)
     print(ceo)
     user_message_handler = UserMessageHandler(ceo)
