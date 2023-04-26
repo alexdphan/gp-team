@@ -319,10 +319,10 @@ class CEO:
 
     def execute_chains(self, objective: str, num_team_members: int):
         """Execute the task prioritization and execution chains for each team member. This is used to execute the task prioritization and execution chains for each team member."""
-        # create team members
-        self.create_team_members(objective=objective, num_team_members=num_team_members)
-        # assign tasks to team members
-        self.assign_tasks_to_team_members(objective=objective)
+        # # create team members
+        # self.create_team_members(objective=objective, num_team_members=num_team_members)
+        # # assign tasks to team members
+        # self.assign_tasks_to_team_members(objective=objective)
 
         # team_outputs is a dictionary of user_id: output for each team member
         team_outputs = {}
@@ -399,35 +399,51 @@ class CEO:
         return report
 
 
-    ########## Workflow ##########
+    #=========== Workflow ===========#
     def run_workflow(self, objective: str, num_team_members: int, user_feedback: str = None):
         # Input validation for objective and num_team_members
         if not objective or not isinstance(num_team_members, int) or num_team_members <= 0:
             raise ValueError("Invalid input for objective or num_team_members.")
         
         try:
-            # RoleCreationChain
+            # Step 1: RoleCreationChain
             print("Creating team members...")
             self.create_team_members(objective=objective, num_team_members=num_team_members)
             
-            # need to loop steps 1-6
-            
-            # TaskCreationAssignChain
-            print("Assigning tasks to team members...")
-            self.assign_tasks_to_team_members(objective=objective)
-            
-            # ReportCreationChain
-            # ReviseCreationChain
-            # TaskPrioritizationChain
-            
-            # ExecutionChain
-            print("Executing chains...")
-            results = self.execute_chains(objective=objective, num_team_members=num_team_members)
-            
-            report = results["report"]
-            revised_team_outputs = results["revised_team_outputs"]
+            # looped steps
+            satisfied = False
+            while not satisfied:
+                
+                # Step 2: TaskCreationAssignChain
+                print("Assigning tasks to team members...")
+                self.assign_tasks_to_team_members(objective=objective)
+                
+                # Step 3: ReportCreationChain
+                print("Generating reports...")
+                self.report_creation_chain(objective=objective, team_member_expertise=self.get_team_members_expertise(), user_id=self.user_id, chroma_instance=self.chroma_instance, team_member_outputs=self.team_member_outputs, user_feedback=self.user_feedback)
+                
+                # Step 4: ReviseCreationChain
+                print("Revising tasks...")
+                self.revise_creation_chain(team_member_expertise=self.get_team_members_expertise(), user_id=self.user_id, chroma_instance=self.chroma_instance, team_member_outputs=self.team_member_outputs, user_feedback=self.user_feedback)
+
+                # Step 5: TaskPrioritizationChain
+                print("Prioritizing tasks...")
+                self.task_prioritization_chain(objective=objective, team_member_expertise=self.get_team_members_expertise(), user_id=self.user_id, chroma_instance=self.chroma_instance, team_member_outputs=self.team_member_outputs, user_feedback=self.user_feedback)
+                
+                # ExecutionChain
+                print("Executing chains...")
+                results = self.execute_chains(objective=objective, num_team_members=num_team_members)
+                
+                report = results["report"]
+                revised_team_outputs = results["revised_team_outputs"]
+                print("Workflow complete!")
+                
+                # Get user feedback or check if the output meets the desired condition
+                user_feedback = input("Are you satisfied with the results? (yes/no): ")
+                satisfied = user_feedback.lower() == "yes"
+                
             print("Workflow complete!")
-            
+                
             return report, revised_team_outputs
         except Exception as e:
             print(f"An error occurred: {e}")
@@ -466,7 +482,7 @@ class UserMessageHandler:
             objective = input("Enter the objective: ").strip()
             num_team_members = int(input("Enter the number of team members: ").strip())
             
-            report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members)
+            report, revised_team_outputs = self.ceo.run_workflow(objective, num_team_members, user_feedback=None)
             
             # print("\nReport:")
             # print(report)
