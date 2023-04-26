@@ -141,20 +141,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class UserMessageInput(BaseModel):
     message: str
+    continue_working: bool
 
+async def process_message(ceo: CEO, message: str):
+    user_message_handler = UserMessageHandler(ceo)
+    response_text, _ = user_message_handler.process_message(message=message)
+    return response_text
 
 @app.post("/user_message")
 async def user_message(input_data: UserMessageInput):
-    print(input_data.message)
-    # ceo = CEO(llm, chroma_instance, task_creation_assign_chain, role_creation_chain, report_creation_chain, revise_creation_chain, task_prioritization_chain, execution_chain)
     ceo = CEO(llm, chroma_instance, task_creation_assign_chain, role_creation_chain, report_creation_chain, revise_creation_chain)
-    print(ceo)
     user_message_handler = UserMessageHandler(ceo)
-    print(user_message_handler)
-    response = user_message_handler.process_message(message=input_data.message)
-    print(response)
-    return {"response": response}
 
+    response_text, revised_team_outputs = user_message_handler.process_message(input_data.message)
 
+    if input_data.continue_working:
+        question = "Would you like to continue working with the team? (Yes or No)"
+        response_text += f"\n\n{question}"
+    else:
+        if revised_team_outputs:
+            response_text += f"\n\nRevised Team Outputs:\n{revised_team_outputs}"
+        summary = ceo.report_creation_chain.run()
+        response_text += f"\n\n{summary}"
+
+    return {"response": response_text}
+
+# need to figure out how to get the final response on the frontend.
