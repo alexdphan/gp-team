@@ -95,9 +95,6 @@ class TeamMember:
         self.overall_feedback = overall_feedback
         self.chroma_instance = chroma_instance
 
-
-
-
     def prioritize_tasks(self):
         """Prioritize tasks using the TaskPrioritizationChain."""
         
@@ -125,6 +122,7 @@ class TeamMember:
 # Additional functionality for the TeamMember class can be added here as needed.
 # Example of creating TeamMember objects with the chains
 def create_team_member(
+    name: str,
     user_id: str,
     expertise_role: str,
     task_list: List[str],
@@ -134,7 +132,6 @@ def create_team_member(
     overall_feedback: Optional[str] = None,
     chroma_instance: Chroma = None,
 ) -> TeamMember:
-    print(f"Creating team member with the role: {expertise_role}")
     return TeamMember(
         llm=LLMChain,
         user_id=user_id,
@@ -146,4 +143,5 @@ def create_team_member(
         overall_feedback=overall_feedback,
         chroma_instance=chroma_instance,
     )
+
 
