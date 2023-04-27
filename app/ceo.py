@@ -261,24 +261,12 @@ class CEO:
             "num_team_members": num_team_members,
             "team_members_expertise": self.get_team_members_expertise(),
         }
-        roles_response = self.role_creation_chain.run(roles_input)
+        roles = self.role_creation_chain.run(roles_input)
         
-        # Split the response by newline characters to get each role line
-        role_lines = roles_response.split("\n")
-        
-        # Extract role names and expertise for each role line
-        expertise_roles = []
-        for role_line in role_lines:
-            if not role_line.strip():
-                continue
-            _, role_info = role_line.split(":", 1)
-            role_name, *expertise = role_info.split(", ")
-            expertise_roles.append(role_name.strip())
+        # Parse the roles output into a list of strings
+        expertise_roles = [role.strip() for role in roles.split("\n") if role.strip()]
+        expertise_roles = expertise_roles[:num_team_members]  # Keep only the first num_team_members roles
 
-        # Filter out empty roles
-        expertise_roles = [role for role in expertise_roles if role]
-
-        # Create team members for non-empty roles
         for role in expertise_roles:
             team_member_id = self.get_new_user_id()
             team_member = create_team_member(
@@ -297,7 +285,6 @@ class CEO:
         )
 
         return self.team_members
-
 
 
         # print(team_members_str)
