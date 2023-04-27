@@ -20,7 +20,6 @@ from team_member import (
     ExecutionChain,
 )
 
-# Define the Chains
 class RoleCreationChain(LLMChain):
     """Chain to create roles."""
 
@@ -30,21 +29,15 @@ class RoleCreationChain(LLMChain):
         prompt_template = (
             "You are an AI tasked with creating roles and their expertise for a team based on the team's objective."
             " User ID: {user_id}. Objective: {objective}. Number of Team Members: {num_team_members}."
-            " Consider the information from the Chroma Instance: {chroma_instance}."
-            "\n\nPlease provide your response in the following format:"
-            "\nAction: [describe the action]"
-            "\nAction Input: [describe the input for the action]"
-            "\nThought: [describe the thought process]"
-            "\nFinal Answer: Role Name, Expertise 1, Expertise 2, ..."
-            "\n\nExample:"
-            "\nAction: Create roles and expertise"
-            "\nAction Input: Objective, Chroma Instance, Number of Team Members"
-            "\nThought: Based on the objective and the chroma instance, the necessary roles and their expertise can be..."
-            "\nFinal Answer: Role Name, Expertise 1, Expertise 2, ..."
+            "\n\nPlease create exactly {num_team_members} roles for the team, and provide your response in the following format:"
+            "\nRole 1: Role Name, Expertise 1, Expertise 2, ..."
+            "\nRole 2: Role Name, Expertise 1, Expertise 2, ..."
+            "\n..."
+            "\nRole {num_team_members}: Role Name, Expertise 1, Expertise 2, ..."
         )
         prompt = PromptTemplate(
             template=prompt_template,
-            input_variables=["user_id", "chroma_instance", "objective", "num_team_members"],
+            input_variables=["user_id", "objective", "num_team_members"],  
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
@@ -60,7 +53,6 @@ class TaskCreationAssignChain(LLMChain):
             "You are an AI tasked with creating and assigning tasks to a team based on their expertise and the team's objective."
             " User ID: {user_id}. Objective: {objective}."
             " Team members and their expertise roles: {team_members_expertise}."
-            " Consider the information from the Chroma Instance: {chroma_instance}."
             " Create a task list for each team member and assign tasks according to their expertise."
             "\n\nPlease provide your response in the following format:"
             "\nAction: [describe the action]"
@@ -77,7 +69,6 @@ class TaskCreationAssignChain(LLMChain):
             template=task_assignment_template,
             input_variables=[
                 "user_id",
-                "chroma_instance",
                 "objective",
                 "team_members_expertise",
             ],
@@ -156,7 +147,6 @@ class ReportCreationChain(LLMChain):
             "You are an AI tasked with creating a report for a team based on their expertise and the team's objective."
             " User ID: {user_id}. Objective: {objective}."
             " Team members and their expertise roles: {team_members_expertise}."
-            " Consider the information from the Chroma Instance: {chroma_instance}."
             " Please update the report with the latest information."
             "\n\nPlease provide your response in the following format:"
             "\nAction: [describe the action]"
@@ -171,7 +161,7 @@ class ReportCreationChain(LLMChain):
         )
         prompt = PromptTemplate(
             template=prompt_template,
-            input_variables=["user_id", "chroma_instance", "objective", "team_members_expertise"],
+            input_variables=["user_id", "objective", "team_members_expertise"],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
@@ -185,7 +175,6 @@ class ReviseCreationChain(LLMChain):
             "You are an AI tasked with revising the outputs of each TeamMember based on their expertise and the team's objective."
             "User ID: {user_id}. Objective: {objective}."
             " Team members and their expertise roles: {team_members_expertise}."
-            " Consider the information from the Chroma Instance: {chroma_instance}."
             " If there are no outputs to revise, provide only what you have done so far."
             " The user provided the following feedback: {user_feedback}. With this, please revise the outputs accordingly."
             "\n\nAction: {{action}}"
@@ -195,7 +184,7 @@ class ReviseCreationChain(LLMChain):
         )
         prompt = PromptTemplate(
             template=prompt_template,
-            input_variables=["user_id", "chroma_instance", "objective", "team_members_expertise", "user_feedback"],
+            input_variables=["user_id", "objective", "team_members_expertise", "user_feedback"],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
@@ -228,7 +217,6 @@ class CEO:
     def __init__(
         self,
         llm: BaseLLM,
-        chroma_instance: Chroma,
         role_creation_chain: LLMChain,
         task_creation_assign_chain: LLMChain,
         report_creation_chain: LLMChain,
@@ -237,7 +225,6 @@ class CEO:
         # execution_chain: ExecutionChain,
     ):
         self.llm = llm
-        self.chroma_instance = chroma_instance
         self.role_creation_chain = role_creation_chain
         self.task_creation_assign_chain = task_creation_assign_chain
         self.report_creation_chain = report_creation_chain
@@ -268,27 +255,30 @@ class CEO:
 
 
     def create_team_members(self, objective: str, num_team_members: int):
-        """
-        Create team members and assign expertise roles based on the team's objective and the Chroma instance.
-        
-        Creates a team_member from team_member.py. Then, assigns an expertise role to the team member based on the team's objective and the Chroma instance. It all goes into a dictionary of team members, where the key is the user id and the value is the team member.
-        
-        Takes in the team's objective, the number of team members, and the team members' expertise roles. For example, if the objective is to create a report, then the CEO will create a team of 3 team members, where each team member has a different expertise role: 1) creating a report, 2) revising a report, and 3) executing a report.
-        """
         roles_input = {
             "user_id": self.user_id,
-            "chroma_instance": self.chroma_instance,
             "objective": objective,
             "num_team_members": num_team_members,
             "team_members_expertise": self.get_team_members_expertise(),
         }
-        roles = self.role_creation_chain.run(roles_input)
+        roles_response = self.role_creation_chain.run(roles_input)
         
-        # parse the roles into a list of lists, for example, [[1,2,3],[4,5,6]]
-        expertise_roles = roles.strip().split("\n")[:num_team_members]
-        # example: expertise_roles = ["1,2,3", "4,5,6"]
+        # Split the response by newline characters to get each role line
+        role_lines = roles_response.split("\n")
+        
+        # Extract role names and expertise for each role line
+        expertise_roles = []
+        for role_line in role_lines:
+            if not role_line.strip():
+                continue
+            _, role_info = role_line.split(":", 1)
+            role_name, *expertise = role_info.split(", ")
+            expertise_roles.append(role_name.strip())
 
-        # for each expertise role, create a team member using the create_team_member function
+        # Filter out empty roles
+        expertise_roles = [role for role in expertise_roles if role]
+
+        # Create team members for non-empty roles
         for role in expertise_roles:
             team_member_id = self.get_new_user_id()
             team_member = create_team_member(
@@ -302,10 +292,21 @@ class CEO:
             )
             self.team_members[team_member_id] = team_member
 
+        team_members_str = "\n".join(
+            [f"Created team member {team_member_id} with expertise role: {role.title()}" for team_member_id, role in zip(self.team_members, expertise_roles)]
+        )
 
-        print(f"Created team members with roles and assignments based on their expertise:\n{roles}")
+        return self.team_members
+
+
+
+        # print(team_members_str)
+
+
+
+        # print(f"Created team members with roles and assignments based on their expertise:\n{roles}")
         expertise_roles = roles.strip().split("\n")[:num_team_members]
-        print(f"Expertise roles: {expertise_roles}")
+        # print(f"Expertise roles: {expertise_roles}")
 
         team_members_str = "\n".join(
             [f"Created team member {team_member_id} with expertise role: {role.title()}" for team_member_id, role in zip(self.team_members, expertise_roles)]
@@ -322,7 +323,6 @@ class CEO:
         task_lists = self.task_creation_assign_chain.run(
             user_id=self.user_id,
             objective=objective,
-            chroma_instance=self.chroma_instance,
             team_members_expertise=team_members_expertise,
             num_team_members=len(self.team_members),  
         )
@@ -332,7 +332,7 @@ class CEO:
         # For each team member, assign the task list to the team member
         for user_id, task_list in zip(self.team_members.keys(), task_lists):
             self.team_members[user_id].task_list = task_list
-            print(f"For user {user_id}, assigned task list: {task_list}")
+            # print(f"For user {user_id}, assigned task list: {task_list}")
 
 
     def get_team_members_expertise(self):
@@ -340,142 +340,6 @@ class CEO:
         
         # print(f"Team member {self.user_id} has expertise roles: {self.team_members.items()}")
         return {user_id: team_member.expertise_role for user_id, team_member in self.team_members.items()}
-
-        # reutrns a dictionary of user_id: expertise_role for each team member, this is generated from the role creation chain
-        
-    # def execute_chains(self, objective: str):
-    #     """
-    #     Execute the task prioritization and execution chains for each team member.
-    #     This is used to execute the task prioritization and execution chains for each team member.
-    #     """
-
-    #     # Initialize a dictionary to store team member outputs
-    #     team_outputs = {}
-
-    #     # Create a report using the report creation chain (executed by the CEO)
-    #     print("Creating a report based on the progress we've made so far...")
-    #     report = self.report_creation_chain.run(
-    #         user_id=self.user_id,
-    #         objective=objective,
-    #         chroma_instance=self.chroma_instance,
-    #         team_members_expertise=self.get_team_members_expertise(),
-    #         team_outputs=team_outputs,
-    #     )
-    #     print(f"Created a report: {report}")
-
-    #     # Assign team_member_outputs array to the team_outputs dictionary
-    #     self.team_member_outputs = team_outputs
-
-    #     # Use the revise creation chain to receive user feedback, revise the team outputs,
-    #     # and produce revised team outputs and a report
-    #     print("Receiving user feedback and/or revising the team outputs...")
-    #     self.revise_creation_chain.run(
-    #         user_id=self.user_id,
-    #         objective=objective,
-    #         chroma_instance=self.chroma_instance,
-    #         team_members_expertise=self.get_team_members_expertise(),
-    #         user_feedback=self.user_feedback,
-    #         team_outputs=team_outputs,
-    #     )
-
-    #     # Assign tasks to team members
-    #     print("Assigning tasks to team members...")
-    #     self.assign_tasks_to_team_members(objective=objective)
-
-    #     # For each team member, prioritize tasks and execute tasks
-    #     for user_id, team_member in self.team_members.items():
-    #         print(f"Prioritizing tasks for user {user_id}...")
-    #         prioritized_task_list = team_member.prioritize_tasks()
-    #         print(f"Prioritized task list for user {user_id}: {prioritized_task_list}")
-    #         team_member.task_list = prioritized_task_list
-    #         print(f"Executing tasks for user {user_id}...")
-    #         team_member_outputs = team_member.execute_tasks()
-    #         print(f"Outputs for user {user_id}: {team_member_outputs}")
-
-    #     # Print final results
-    #     print(
-    #         f"Report:\n{report}\n"
-    #         f"Team Outputs:\n{team_outputs}"
-    #     )
-
-    #     # Return a dictionary of the report and team member outputs
-    #     return {
-    #         "report": report,
-    #         "revised_team_outputs": team_outputs,
-    
-    #     }
-    def run_workflow(self, objective: str, num_team_members: int, user_feedback: str = None):
-        # Input validation for objective and num_team_members
-        if not objective or not isinstance(num_team_members, int) or num_team_members <= 0:
-            raise ValueError("Invalid input for objective or num_team_members.")
-
-        try:
-            # Create team members and initialize team outputs
-            print("Creating team members...")
-            self.create_team_members(objective=objective, num_team_members=num_team_members)
-            team_outputs = {}
-
-            # Create an instance of the CEO class
-            ceo = CEO()
-
-            satisfied = False
-            while not satisfied:
-                # Receive user feedback and revise team outputs
-                print("Receiving user feedback and/or revising the team outputs...")
-                self.revise_creation_chain.run(
-                    user_id=self.user_id,
-                    objective=objective,
-                    chroma_instance=self.chroma_instance,
-                    team_members_expertise=self.get_team_members_expertise(),
-                    user_feedback=self.user_feedback,
-                    team_outputs=team_outputs,
-                )
-
-                # Assign tasks to team members
-                print("Assigning tasks to team members...")
-                self.assign_tasks_to_team_members(objective=objective)
-
-                # Prioritize tasks for each team member and execute tasks
-                for user_id, team_member in self.team_members.items():
-                    print(f"Prioritizing tasks for user {user_id}...")
-                    prioritized_task_list = team_member.prioritize_tasks()
-                    team_member.task_list = prioritized_task_list
-                    print(f"Executing tasks for user {user_id}...")
-                    team_member_outputs = team_member.execute_tasks()
-                    team_outputs[user_id] = team_member_outputs
-
-                    # Generate report for team member and print task list and outputs
-                    print(f"Generating report for user {user_id}...")
-                    member_report = ceo.generate_member_report(user_id, team_member_outputs)
-                    print(f"Task list for user {user_id}: {prioritized_task_list}")
-                    print(f"Outputs for user {user_id}: {team_member_outputs}")
-                    print(f"Report for user {user_id}:\n{member_report}\n")
-
-                # Generate summary report and print final results
-                print("Generating the final summary report...")
-                final_report = ceo.generate_summary_report(team_outputs)
-                print(f"Final Summary Report:\n{final_report}\n")
-                print(f"Team Outputs:\n{team_outputs}\n")
-
-                # Ask user if they want to continue with the team
-                user_feedback = input("Are you satisfied with the results? (yes/no): ")
-                if user_feedback.lower() == "yes":
-                    continue
-                elif user_feedback.lower() == "no":
-                    satisfied = True
-
-            # Return the final summary report and team member outputs
-            return {
-                "final_summary_report": final_report,
-                "revised_team_outputs": team_outputs,
-            }
-
-        except Exception as e:
-            print(f"An error occurred during the workflow: {str(e)}")
-
-        # results = self.execute_chains(objective=objective)
-        # report = results["report"]
-        # revised_team_outputs = results["revised_team_outputs"]
 
     def receive_output(self, team_member_id, output):
         """Receive output from a team member. This is used to receive output from a team member."""
@@ -497,7 +361,6 @@ class CEO:
             user_id=self.user_id,
             team_member_outputs=self.team_member_outputs,
             team_members=self.team_members,
-            chroma_instance=self.chroma_instance,
             user_feedback=self.user_feedback,
         )
         print(f"report: {report}")
@@ -513,58 +376,31 @@ class CEO:
 
         try:
             # RoleCreationChain
+            print("\n===== Executing RoleCreationChain =====")
             print("Creating team members...")
             self.create_team_members(objective=objective, num_team_members=num_team_members)
+            
+            # Create a formatted string for printing the team members
+            team_members_str = "\n".join(
+                [f"Team Member ID: {team_member_id}, Role: {team_member.expertise_role}"
+                for team_member_id, team_member in self.team_members.items()]
+            )
+            print(f"Team members:\n{team_members_str}")
+            print("===== Finished RoleCreationChain =====\n")
+
 
             # looped steps
             satisfied = False
             while not satisfied:
-                # need to loop steps 2-6
-
-                # # ExecutionChain
-                # # Includes TaskPrioritizationChain and ExecutionChain
-                # print("Executing chains...")
-                # results = self.execute_chains(objective=objective)
-
-                # report = results["report"]
-                # revised_team_outputs = results["revised_team_outputs"]
-
-                # # Print the extracted values
-                # print(f"Final Report: {report}")
-                # print(f"Revised Team Outputs: {revised_team_outputs}")
-
-                # Initialize a dictionary to store team member outputs
-                team_outputs = {}
-
-                # Create a report using the report creation chain (executed by the CEO)
-                print("Creating a report based on the progress we've made so far...")
-                report = self.report_creation_chain.run(
-                    user_id=self.user_id,
-                    objective=objective,
-                    chroma_instance=self.chroma_instance,
-                    team_members_expertise=self.get_team_members_expertise(),
-                    team_outputs=team_outputs,
-                )
-                print(f"Created a report: {report}")
-
-                # Assign team_member_outputs array to the team_outputs dictionary
-                self.team_member_outputs = team_outputs
-
-                # Use the revise creation chain to receive user feedback, revise the team outputs,
-                # and produce revised team outputs and a report
-                print("Receiving user feedback and/or revising the team outputs...")
-                self.revise_creation_chain.run(
-                    user_id=self.user_id,
-                    objective=objective,
-                    chroma_instance=self.chroma_instance,
-                    team_members_expertise=self.get_team_members_expertise(),
-                    user_feedback=self.user_feedback,
-                    team_outputs=team_outputs,
-                )
-
-                # Assign tasks to team members
+                
+                # TaskCreationChain
+                print("\n===== Executing TaskCreationAssignChain =====")
                 print("Assigning tasks to team members...")
                 self.assign_tasks_to_team_members(objective=objective)
+                print("===== Finished TaskCreationAssignChain =====\n")
+                
+                # Initialize a dictionary to store team member outputs
+                team_outputs = {}
 
                 # For each team member, prioritize tasks and execute tasks
                 for user_id, team_member in self.team_members.items():
@@ -576,31 +412,32 @@ class CEO:
                     team_member_outputs = team_member.execute_tasks()
                     print(f"Outputs for user {user_id}: {team_member_outputs}")
 
-                # Print final results
-                print(
-                    f"Report:\n{report}\n"
-                    f"Team Outputs:\n{team_outputs}"
+                # Generate report using the report creation chain (executed by the CEO)
+                print("Creating a report based on the progress we've made so far...")
+                report = self.report_creation_chain.run(
+                    user_id=self.user_id,
+                    objective=objective,
+                    team_members_expertise=self.get_team_members_expertise(),
+                    team_outputs=team_outputs,
                 )
+                print(f"Created a report: {report}")
 
-                # Return a dictionary of the report and team member outputs
-                return {
-                    "report": report,
-                    "revised_team_outputs": team_outputs,
-                }
                 # Get user feedback or check if the output meets the desired condition
                 user_feedback = input("Are you satisfied with the results? (yes/no): ")
                 satisfied = user_feedback.lower() == "yes"
 
             print("Workflow complete!")
-
-            # return report, revised_team_outputs
-            return report
+            
+            # Return a dictionary of the report and team member outputs
+            return {
+                "report": report,
+                "revised_team_outputs": team_outputs,
+            }
 
         except Exception as e:
             print(f"An error occurred: {e}")
             raise
 
-        
         # RoleCreationChain
         # TaskCreationAssignChain (LOOPED)
         # ReportCreationChain (LOOPED)

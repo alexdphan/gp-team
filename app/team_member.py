@@ -37,7 +37,7 @@ class TaskPrioritizationChain(LLMChain):
         prompt = PromptTemplate(
             template=task_prioritization_template,
             input_variables=["user_id", "chroma_instance", "expertise_role", "task_list", "objective", "overall_feedback"],
-    )
+    )   
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
 class ExecutionChain(LLMChain):
